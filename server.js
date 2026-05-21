@@ -2,9 +2,27 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const compression = require('compression');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// OpenAPI spec definition
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'httpbin-debug',
+      version: '1.0.0',
+      description: 'HTTP Request & Response Service for debugging HTTP calls. Use as an origin to inspect how CDN functions, proxies, and middleware transform requests and responses.'
+    },
+    servers: [
+      { url: `http://localhost:${PORT}`, description: 'Local' }
+    ]
+  },
+  apis: [__filename]
+});
 
 // Middleware
 app.use(compression());
@@ -13,6 +31,18 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use(bodyParser.raw({ limit: '10mb' }));
 app.use(bodyParser.text({ limit: '10mb' }));
+
+// Swagger UI at /docs
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'httpbin-debug API',
+  swaggerOptions: { displayRequestDuration: true, filter: true }
+}));
+
+// Serve raw OpenAPI spec
+app.get('/openapi.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Helper function to get client IP
 function getClientIP(req) {
@@ -53,11 +83,63 @@ function formatRequestData(req) {
   return data;
 }
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     RequestData:
+ *       type: object
+ *       properties:
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *         method:
+ *           type: string
+ *         url:
+ *           type: string
+ *         path:
+ *           type: string
+ *         protocol:
+ *           type: string
+ *         hostname:
+ *           type: string
+ *         ip:
+ *           type: string
+ *         headers:
+ *           type: object
+ *         query:
+ *           type: object
+ *         params:
+ *           type: object
+ *         body:
+ *           type: object
+ *         userAgent:
+ *           type: string
+ *         contentType:
+ *           type: string
+ *         host:
+ *           type: string
+ *         origin:
+ *           type: string
+ */
+
+/**
+ * @openapi
+ * /:
+ *   get:
+ *     summary: Service info and endpoint listing
+ *     tags: [Info]
+ *     responses:
+ *       200:
+ *         description: JSON listing of all available endpoints
+ */
 // Root endpoint - shows service info
 app.get('/', (req, res) => {
   res.json({
     message: 'HTTP Request & Response Service',
     description: 'A simple service inspired by httpbin for debugging HTTP requests',
+    docs: '/docs',
+    openapi: '/openapi.json',
     endpoints: {
       '/anything/*': 'Accepts any HTTP method and returns request details',
       '/get': 'Returns GET request details',
@@ -77,27 +159,125 @@ app.get('/', (req, res) => {
   });
 });
 
+/**
+ * @openapi
+ * /get:
+ *   get:
+ *     summary: Returns GET request data as seen by the origin
+ *     tags: [HTTP Methods]
+ *     responses:
+ *       200:
+ *         description: Full request echo including headers, query params, IP
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 // Specific method endpoints
 app.get('/get', (req, res) => {
   res.json(formatRequestData(req));
 });
 
+/**
+ * @openapi
+ * /post:
+ *   post:
+ *     summary: Returns POST request data including body
+ *     tags: [HTTP Methods]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *         text/plain:
+ *           schema:
+ *             type: string
+ *     responses:
+ *       200:
+ *         description: Full request echo with body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 app.post('/post', (req, res) => {
   res.json(formatRequestData(req));
 });
 
+/**
+ * @openapi
+ * /put:
+ *   put:
+ *     summary: Returns PUT request data including body
+ *     tags: [HTTP Methods]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Full request echo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 app.put('/put', (req, res) => {
   res.json(formatRequestData(req));
 });
 
+/**
+ * @openapi
+ * /delete:
+ *   delete:
+ *     summary: Returns DELETE request data
+ *     tags: [HTTP Methods]
+ *     responses:
+ *       200:
+ *         description: Full request echo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 app.delete('/delete', (req, res) => {
   res.json(formatRequestData(req));
 });
 
+/**
+ * @openapi
+ * /patch:
+ *   patch:
+ *     summary: Returns PATCH request data including body
+ *     tags: [HTTP Methods]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Full request echo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 app.patch('/patch', (req, res) => {
   res.json(formatRequestData(req));
 });
 
+/**
+ * @openapi
+ * /headers:
+ *   get:
+ *     summary: Returns only the request headers
+ *     tags: [Inspection]
+ *     responses:
+ *       200:
+ *         description: Request headers object
+ */
 // Headers endpoint
 app.all('/headers', (req, res) => {
   res.json({
@@ -105,6 +285,24 @@ app.all('/headers', (req, res) => {
   });
 });
 
+/**
+ * @openapi
+ * /ip:
+ *   get:
+ *     summary: Returns the client's IP address (respects X-Forwarded-For)
+ *     tags: [Inspection]
+ *     responses:
+ *       200:
+ *         description: Client origin IP
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 origin:
+ *                   type: string
+ *                   example: "203.0.113.42"
+ */
 // IP endpoint
 app.all('/ip', (req, res) => {
   res.json({
@@ -112,6 +310,16 @@ app.all('/ip', (req, res) => {
   });
 });
 
+/**
+ * @openapi
+ * /user-agent:
+ *   get:
+ *     summary: Returns the client's User-Agent header
+ *     tags: [Inspection]
+ *     responses:
+ *       200:
+ *         description: User-Agent string
+ */
 // User-Agent endpoint
 app.all('/user-agent', (req, res) => {
   res.json({
@@ -119,6 +327,21 @@ app.all('/user-agent', (req, res) => {
   });
 });
 
+/**
+ * @openapi
+ * /json:
+ *   post:
+ *     summary: Echoes back JSON body with headers and method
+ *     tags: [HTTP Methods]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Echoed JSON body with request metadata
+ */
 // JSON endpoint - echoes back JSON data
 app.all('/json', (req, res) => {
   res.json({
@@ -128,6 +351,27 @@ app.all('/json', (req, res) => {
   });
 });
 
+/**
+ * @openapi
+ * /status/{code}:
+ *   get:
+ *     summary: Returns the specified HTTP status code
+ *     tags: [Status Codes]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 100
+ *           maximum: 599
+ *         description: HTTP status code to return (100-599)
+ *     responses:
+ *       200:
+ *         description: Response with requested status code
+ *       400:
+ *         description: Invalid status code
+ */
 // Status code endpoint
 app.all('/status/:code', (req, res) => {
   const statusCode = parseInt(req.params.code);
@@ -145,6 +389,28 @@ app.all('/status/:code', (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /delay/{seconds}:
+ *   get:
+ *     summary: Delays response by N seconds (max 10)
+ *     description: Useful for testing timeouts, CDN caching behavior, and retry logic
+ *     tags: [Dynamic]
+ *     parameters:
+ *       - in: path
+ *         name: seconds
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           maximum: 10
+ *         description: Seconds to delay (max 10)
+ *     responses:
+ *       200:
+ *         description: Delayed response with request data
+ *       400:
+ *         description: Delay exceeds maximum
+ */
 // Delay endpoint
 app.all('/delay/:seconds', (req, res) => {
   const delay = parseInt(req.params.seconds) || 0;
@@ -165,6 +431,49 @@ app.all('/delay/:seconds', (req, res) => {
   }, delay * 1000);
 });
 
+/**
+ * @openapi
+ * /anything/{path}:
+ *   get:
+ *     summary: Accepts any method and path, returns full request data
+ *     description: Catch-all endpoint useful for testing how CDN/proxy modifies requests
+ *     tags: [Anything]
+ *     parameters:
+ *       - in: path
+ *         name: path
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Any path segment
+ *     responses:
+ *       200:
+ *         description: Full request echo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ *   post:
+ *     summary: Accepts any method and path, returns full request data
+ *     tags: [Anything]
+ *     parameters:
+ *       - in: path
+ *         name: path
+ *         required: false
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Full request echo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RequestData'
+ */
 // Catch-all endpoint for /anything/* - accepts any method
 app.all('/anything/*', (req, res) => {
   res.json(formatRequestData(req));
@@ -194,7 +503,8 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 HTTP Request & Response Service running on port ${PORT}`);
-  console.log(`📡 Visit http://localhost:${PORT} to see available endpoints`);
+  console.log(`📖 API Docs: http://localhost:${PORT}/docs`);
+  console.log(`📡 OpenAPI spec: http://localhost:${PORT}/openapi.json`);
   console.log(`🔍 Send requests to any endpoint to debug your HTTP calls`);
 });
 

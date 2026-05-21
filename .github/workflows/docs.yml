@@ -1,0 +1,67 @@
+name: Deploy API Docs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["server.js", "package.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Generate OpenAPI spec
+        run: node -e "
+          const app = require('./server.js');
+          const fs = require('fs');
+          const http = require('http');
+          setTimeout(() => {
+            http.get('http://localhost:3000/openapi.json', (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                fs.writeFileSync('openapi.json', data);
+                console.log('Spec written');
+                process.exit(0);
+              });
+            });
+          }, 1000);
+          "
+
+      - name: Build static docs with Redoc
+        run: |
+          npx @redocly/cli build-docs openapi.json -o docs/index.html --title "httpbin-debug API"
+
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./docs"
+
+  deploy:
+    needs: build-docs
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
